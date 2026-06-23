@@ -1,0 +1,726 @@
+//@version=5
+indicator("Structure by [[Z.J]]", "Structure by [[Z.J]]", true,max_bars_back = 5000, max_labels_count = 500, max_lines_count = 500)
+
+
+
+// ---------------------- Structure mapping Setting
+//#region variable declaration
+var bool mnUp = na
+var bool mnDn = na
+float mnStrc = na
+var top = high
+var bot = low
+var puUp = high
+var puDn = low
+var L = low
+var H = high
+var idmB = low
+var idmS = high
+var lastH = high
+var lastL = low
+var lastHH = high
+var lastLL = low
+//bar indexes
+var int puUpbar = na
+var int puDnbar = na
+var int idmB_bar = na
+var int idmS_bar = na
+var int Hbar = bar_index
+var int Lbar = bar_index
+var int lastHbar = bar_index
+var int lastLbar = bar_index
+var int lastHHbar = bar_index
+var int lastLLbar = bar_index
+//structure confirmaions
+lastHL = math.max(Hbar, Lbar)
+var bool isBosUp = false
+var bool isBosDn = false
+var bool isCocUp = true
+var bool isCocDn = true
+
+//color
+color transp = color.new(color.white,100)
+
+DefaultStructSetting = "Structure Settings"
+//drawing options
+equalHL = input.bool(false,"Use equal H/L", "Để tính toán các pullback hợp lệ và cấu trúc nhỏ", group = DefaultStructSetting, inline = "Line1")
+
+showHL = input.bool(true, "Mark H/L", group = DefaultStructSetting, inline = "Line2", tooltip = "Đánh dấu swing High Low trên chart")
+HLcolor = input.color(color.rgb(255, 255, 255, 32), "H/L color", group = DefaultStructSetting, inline = "Line2")
+
+showMn = input.bool(true, "Mark out internal structure", group = DefaultStructSetting, inline = "Line3", tooltip = "Hiển thị cấu trúc internal")
+puUpco = input.color(color.rgb(255, 235, 59, 64)  , "High pivots", inline = "mnco", group = DefaultStructSetting)
+puDnco = input.color(color.rgb(33, 149, 243, 64), "Low pivots" , inline = "mnco", group = DefaultStructSetting)
+
+showBC = input.bool(true, "Mark BoS/ChoCH", group = DefaultStructSetting, inline = "Line4", tooltip = "Hiển thị Bos/ ChoCh trên chart")
+bull = input.color(color.rgb(76, 175, 79, 38), "Bull color", inline = "BSclor" ,group = DefaultStructSetting)
+bear = input.color(color.rgb(255, 82, 82, 38)  , "Bear color", inline = "BSclor" ,group = DefaultStructSetting)
+
+showbarcolor = input.bool(false,"Bar color", group = DefaultStructSetting, inline = "Line5", tooltip = "Ghi đè màu của cấu trúc vào Chart")
+showSCOB = input.bool(true, "Show SCOB pattern", group = DefaultStructSetting, inline = "Line6", tooltip = "Ghi đè màu của nến SCOB vào Chart")
+scobUp = input.color(color.aqua   , "Bullish SCOB", inline = "scob" , group = DefaultStructSetting)
+scobDn = input.color(color.fuchsia, "Bearish SCOB", inline = "scob" , group = DefaultStructSetting)
+
+showliveIDM = input.bool(true,"Mark live IDM", group = DefaultStructSetting, inline = "Line7", tooltip = "Hiển thị IDM thời gian thực trên Chart")
+showIDM = input.bool(true,"Mark previous IDM", group = DefaultStructSetting, inline = "Line8", tooltip = "Hiển thị IDM quá khứ trên Chart")
+idmColor = input.color(color.rgb(255, 255, 255, 38), "IDM color", group = DefaultStructSetting, inline = "Line9")
+var label lv_lbl = na
+var line lv_line = na
+
+showSw = input.bool(true, "Show H/L sweeping lines", group = DefaultStructSetting, inline="sweeping1", tooltip = "Hiển thị đường line sweeping / Stophunt trên Chart")
+markX = input.bool(true, 'Mark "X"', group = DefaultStructSetting, inline="sweeping2", tooltip = "Hiển thị icon XXX thể hiện sweeping / Stophunt trên Chart")
+swColor  = input.color(color.rgb(186, 86, 216, 62), "Sweeping line color", group = DefaultStructSetting, inline="sweeping3")
+
+//max line length
+maxlen = bar_index - 500
+
+//#endregion
+
+//#region drawing functions
+mnMark(bool UD) =>
+    if showMn 
+        label.new(
+         x = UD ? puUpbar : puDnbar,
+         y = UD ? puUp : puDn,
+         yloc = UD ? yloc.abovebar : yloc.belowbar,
+         text = "",
+         color = UD ? puUpco : puDnco,
+         style = UD ? label.style_triangledown : label.style_triangleup, //style_triangleup 
+         size = size.auto
+         )
+
+BoS_ChoCh(bool B_C, bool UpDn) =>
+    [HLbarid, BCprc, BCcolor, BCtxt, BCstyle] = switch
+        B_C == true and UpDn == true => [lastHHbar, lastHH, bull, "BoS"  , label.style_label_down]
+        B_C == false and UpDn == true => [lastHbar , lastH , bull, "ChoCh", label.style_label_down]
+        B_C == false and UpDn == false => [lastLbar , lastL , bear, "ChoCh", label.style_label_up  ]
+        B_C == true and UpDn == false => [lastLLbar, lastLL, bear, "BoS"  , label.style_label_up  ]
+    HLbarid := HLbarid < maxlen ? maxlen : HLbarid
+    if showBC
+        line.new(HLbarid, BCprc, bar_index, BCprc, color = BCcolor, style = line.style_dotted)
+        label.new(
+         int( math.avg(bar_index,HLbarid) ), BCprc
+          ,BCtxt
+          ,color = transp
+          ,style = BCstyle
+          ,textcolor = BCcolor,
+          size = size.normal
+          )
+
+cfHL(bool ifHL) =>
+    [ifHLbarid, HLprc] = switch
+        ifHL => 
+            if high > H
+                [bar_index, high]
+            else
+                [Hbar, H]
+        =>
+            if low < L
+                [bar_index, low]
+            else
+                [Lbar, L]
+    ifHL_txt = if ifHL
+        if H == lastHH
+            "HH"
+        else
+            "LH"
+    else
+        if L == lastLL
+            "LL"
+        else
+            "HL"
+    cfHLStyle = ifHL ? label.style_label_down : label.style_label_up
+    if showHL
+        label.new(ifHLbarid,HLprc,ifHL_txt, color = transp, textcolor = HLcolor, style = cfHLStyle, size=size.normal)
+
+sweep(bool swHL, bool swHrLr) =>
+    swStyle = swHL ? label.style_label_down : label.style_label_up
+    [swHLbarid, swprc, swHL_txt] = switch
+        swHL == true and swHrLr == true => [lastHHbar, lastHH, "HH"]
+        swHL == true and swHrLr == false => [lastHbar , lastH , "LH"]
+        swHL == false and swHrLr == true => [lastLbar , lastL , "HL"]
+        swHL == false and swHrLr == false => [lastLLbar, lastLL, "LL"]
+    swHLbarid := swHLbarid < maxlen ? maxlen : swHLbarid
+    //draw sweeping line
+    if showSw
+        line.new(swHLbarid,swprc,bar_index,swprc,color = swColor,style = line.style_dotted)
+        if markX
+            label.new(int(math.avg(bar_index,swHLbarid)),swprc, "X", color = transp, textcolor = swColor, style = swStyle, size = size.normal)
+
+IDM(bool BS) =>
+    IDMid = BS ? idmB_bar : idmS_bar
+    idmprc = BS ? idmB : idmS
+    idmStyle = BS ? label.style_label_up : label.style_label_down
+    IDMid := IDMid < maxlen ? maxlen : IDMid
+    //draw idm takeout line
+    if showIDM
+        line.new(IDMid,idmprc,bar_index,idmprc,color = idmColor,style = line.style_dotted)
+        label.new(int(math.avg(bar_index,IDMid)),idmprc, "IDM", color = transp, textcolor = idmColor, style = idmStyle,size = size.normal)
+        
+//Bar color
+ba_color = if showSCOB
+    if low[1] == puDn and low >= low[1] and close > high[1] and close[1] > low[2]
+        scobUp
+    else if high[1] == puUp and high <= high[1] and close < low[1] and close[1] < high[2]
+        scobDn
+    else if showbarcolor
+        isCocUp?bull:bear
+    else
+        na
+barcolor(ba_color,-1)
+//#endregion
+
+//#region structure mapping
+//update IDM
+if (high > H or (high == H and equalHL)) and low > idmB
+    if low <= puDn
+        idmB := low
+        idmB_bar := bar_index
+    else
+        idmB := puDn
+        idmB_bar := puDnbar
+if (low < L or (low == L and equalHL)) and high < idmS
+    if high >= puUp
+        idmS := high
+        idmS_bar := bar_index
+    else
+        idmS := puUp
+        idmS_bar := puUpbar
+
+//Check for IDM and ChoCh
+if isCocUp and lastHL != Lbar
+    if low < idmB
+        if idmB != lastL
+            IDM(true)
+        isBosUp := false
+        lastH := H
+        lastHbar := Hbar
+        lastHH := H
+        lastHHbar := Hbar
+        cfHL(true)
+        L := low
+        Lbar := bar_index
+else if lastH != lastHH and high > lastH
+    cfHL(false)
+    isCocDn := false
+    isBosDn := false
+    if close > lastH
+        BoS_ChoCh(false,true)
+        isCocUp := true
+    else
+        sweep(true,false)
+
+if isCocDn and lastHL != Hbar
+    if high > idmS
+        if idmS != lastH
+            IDM(false)
+        isBosDn := false
+        lastL := L
+        lastLbar := Lbar
+        lastLL := L
+        lastLLbar := Lbar
+        cfHL(false)
+        H := high
+        Hbar := bar_index
+else if low < lastL and lastL != lastLL
+    if close < lastL
+        BoS_ChoCh(false,false)
+        cfHL(true)
+        isCocDn := true
+        isCocUp := false
+        isBosUp := false
+    else
+        sweep(false,true)
+
+//Check for BoS
+if isBosUp == false
+    if high > lastHH
+        if close > lastHH
+            BoS_ChoCh(true,true)
+            cfHL(false)
+            lastL := L
+            lastLbar := Lbar
+            isCocUp := true
+            isBosUp := true
+            isCocDn := false
+            isBosDn := false
+        else
+            sweep(true,true)
+if isBosDn == false
+    if low < lastLL
+        if close < lastLL
+            BoS_ChoCh(true,false)
+            cfHL(true)
+            lastH := H
+            lastHbar := Hbar
+            isCocUp := false
+            isBosUp := false
+            isCocDn := true
+            isBosDn := true
+        else
+            sweep(false,false)
+//#endregion
+
+//#region internal structure
+if equalHL
+    if high >= top        
+        if low > bot
+            mnDn := false
+        mnUp := true
+    if low <= bot
+        if high < top
+            mnUp := false
+        mnDn := true
+    if mnUp[1] and not mnUp
+        mnMark(true)
+    if mnDn[1] and not mnDn
+        mnMark(false)
+else
+    if high > top        
+        if low > bot
+            mnDn := false
+        mnUp := true
+    if low < bot
+        if high < top
+            mnUp := false
+        mnDn := true
+    if mnUp[1] and not mnUp
+        mnMark(true)
+    if mnDn[1] and not mnDn
+        mnMark(false)
+
+if equalHL
+    if high >= top
+        puUp := high
+        puUpbar := bar_index
+    if low <= bot
+        puDn := low
+        puDnbar := bar_index
+        top := high
+        bot := low
+    if high >= top
+        top := high
+        bot := low
+else
+    if high > top
+        puUp := high
+        puUpbar := bar_index
+    if low < bot
+        puDn := low
+        puDnbar := bar_index
+        top := high
+        bot := low
+    if high > top
+        top := high
+        bot := low        
+//#endregion
+
+//#region auto update High and Low vars
+if high > H or (high == H and equalHL)
+    H := high
+    Hbar := bar_index
+if high > idmS 
+    idmS := high
+    idmS_bar := bar_index
+if high > lastH or (high == lastH and equalHL)
+    lastH := high
+    lastHbar := bar_index
+if high > lastHH or (high == lastHH and equalHL)
+    lastHH := high
+    lastHHbar := bar_index
+
+if low < L or (low == L and equalHL)
+    L := low
+    Lbar := bar_index
+if low < idmB
+    idmB := low
+    idmB_bar := bar_index
+if low < lastL or (low == lastL and equalHL)
+    lastL := low
+    lastLbar := bar_index
+if low < lastLL or (low == lastLL and equalHL)
+    lastLL := low
+    lastLLbar := bar_index
+
+//#endregion
+
+//#region live IDM
+if showliveIDM and barstate.islast
+    [liveIDM, liveIDMbar] = if isCocUp and lastHL == Hbar
+        [idmB, idmB_bar]
+    else if isCocDn and lastHL == Lbar
+        [idmS, idmS_bar]
+    lv_line := line.new(liveIDMbar, liveIDM, bar_index + 20, liveIDM, color = idmColor, style = line.style_dotted),
+    lv_lbl := label.new(bar_index + 20, liveIDM, "IDM", color = transp, textcolor = idmColor, style = isCocUp ? label.style_label_down : label.style_label_up, size = size.normal)
+else
+    lv_line := na
+    lv_lbl := na
+line.delete(lv_line[1])
+label.delete(lv_lbl[1])
+//#endregion
+
+
+// --------------------------------------------------------- Gann Swing
+
+//-----Input-------
+DefaultGannSetting = "GannSwingSetting"
+showGann = input.bool(true, 'Show Gann', group=DefaultGannSetting, inline = "Line1")
+colorGann = input.color(color.rgb(255, 255, 255, 62), 'Color/Width', group=DefaultGannSetting, inline = "Line1")
+widthGann = input.int(defval=1,title = "",minval=1, group=DefaultGannSetting , step=1, inline = "Line1")
+
+tf1 = input.timeframe(defval = "", title = "TimeFrame") 
+//
+// Funtion
+arrayPopPush(_array,_value) =>
+    array.pop(_array)
+    array.push(_array,_value)
+arrayShiftPush(_array,_value) =>
+    array.shift(_array)
+    array.push(_array,_value)
+
+
+highPrev = request.security(syminfo.tickerid, tf1, high, lookahead = barmerge.lookahead_on)
+lowPrev = request.security(syminfo.tickerid, tf1, low, lookahead = barmerge.lookahead_on)
+closePrev = request.security(syminfo.tickerid, tf1, close, lookahead = barmerge.lookahead_on)
+
+
+var arrayX = array.new_int(5,bar_index)
+var arrayY = array.new_float()
+line lineGann = na
+int drawLine = 0
+
+bool runCheckChoCh = false
+if(array.size(arrayY) == 0)
+
+	array.push(arrayY,closePrev - math.abs(highPrev - lowPrev)*1)
+	array.push(arrayY,closePrev + math.abs(highPrev - lowPrev)*1)
+	array.push(arrayY,closePrev - math.abs(highPrev - lowPrev)*2)
+	array.push(arrayY,closePrev + math.abs(highPrev - lowPrev)*2)
+	array.push(arrayY,closePrev)
+
+// 0:Tiếp tục 1:Đảo chiều; // Outsidebar 2:Tiếp tục 3:Tiếp tục và Đảo chiều
+drawLine := 0
+runCheckChoCh := runCheckChoCh[1]
+if(highPrev[0] > highPrev[1] and lowPrev[0] > lowPrev[1])
+	if(array.get(arrayY,4) >= array.get(arrayY,3))
+	    if(highPrev[0] > array.get(arrayY,4))
+		    arrayPopPush(arrayX,bar_index)
+	        arrayPopPush(arrayY,highPrev[0])
+	else
+		arrayShiftPush(arrayX,bar_index)
+	    arrayShiftPush(arrayY,highPrev[0])
+		drawLine := 1
+		runCheckChoCh := true
+else if(highPrev[0] < highPrev[1] and lowPrev[0] < lowPrev[1])
+	if(array.get(arrayY,4) >= array.get(arrayY,3))
+		arrayShiftPush(arrayX,bar_index)
+	    arrayShiftPush(arrayY,lowPrev[0])
+		drawLine := 1
+		runCheckChoCh := true
+	else
+	    if(lowPrev[0] < array.get(arrayY,4))
+		    arrayPopPush(arrayX,bar_index)
+	        arrayPopPush(arrayY,lowPrev[0])
+else if(highPrev[0] >= highPrev[1] and lowPrev[0] <= lowPrev[1])
+    if(array.get(arrayY,4) > array.get(arrayY,3))
+        if(highPrev[0] > array.get(arrayY,4))
+		    arrayPopPush(arrayX,bar_index)
+	        arrayPopPush(arrayY,highPrev[0])
+	        drawLine := 2
+        if(array.get(arrayY,3) > lowPrev[0])
+		    arrayShiftPush(arrayX,bar_index)
+		    arrayShiftPush(arrayY,lowPrev[0])
+		    drawLine := 3
+			runCheckChoCh := true
+	else if(array.get(arrayY,4) < array.get(arrayY,3))
+	    if(lowPrev[0] < array.get(arrayY,4))
+		    arrayPopPush(arrayX,bar_index)
+	        arrayPopPush(arrayY,lowPrev[0])
+	        drawLine := 2
+        if(highPrev[0] > array.get(arrayY,3))
+		    arrayShiftPush(arrayX,bar_index)
+		    arrayShiftPush(arrayY,highPrev[0])
+		    drawLine := 3
+			runCheckChoCh := true
+else if(highPrev[0] <= highPrev[1] and lowPrev[0] >= lowPrev[1])
+	highPrev := highPrev[1]
+	lowPrev := lowPrev[1]
+	
+if(showGann)
+    if(drawLine == 0 or drawLine == 2)
+    	line.delete(lineGann[1])
+        lineGann := line.new(array.get(arrayX,3),array.get(arrayY,3),array.get(arrayX,4),array.get(arrayY,4), color = colorGann, width = widthGann)
+    else if(drawLine == 1)
+        lineGann := line.new(array.get(arrayX,3),array.get(arrayY,3),array.get(arrayX,4),array.get(arrayY,4), color = colorGann, width = widthGann)
+    else if(drawLine == 3)
+        line.delete(lineGann[1])
+        lineGann := line.new(array.get(arrayX,2),array.get(arrayY,2),array.get(arrayX,3),array.get(arrayY,3), color = colorGann, width = widthGann)
+        lineGann := line.new(array.get(arrayX,3),array.get(arrayY,3),array.get(arrayX,4),array.get(arrayY,4), color = colorGann, width = widthGann)
+
+// --------------------------------------------    End Gann Swing
+
+
+//------------------------------------------------------------------------------
+//Settings FVG
+//-----------------------------------------------------------------------------{
+
+fvgSettings = 'FVG / Imbalance / IPA'
+//Style
+extend = input.int(36, 'Extend', minval = 0, inline = 'extend', group = fvgSettings)
+dynamic = input(false, 'Dynamic', inline = 'extend', group = fvgSettings)
+
+bullCss = input.color(color.new(#052786, 64), "Bullish FVG", group = fvgSettings)
+bearCss = input.color(color.new(#7a4310, 64), "Bearish FVG", group = fvgSettings)
+
+//Dashboard
+showDash  = input(false, 'Show Dashboard FVG', group = fvgSettings)
+dashLoc  = input.string('Top Right', 'Location', options = ['Top Right', 'Bottom Right', 'Bottom Left'], group = fvgSettings)
+textSize = input.string('Small', 'Size'        , options = ['Tiny', 'Small', 'Normal']                 , group = fvgSettings)
+
+thresholdPer = input.float(0, "Threshold %", minval = 0, maxval = 100, step = .1, inline = 'threshold', group = fvgSettings)
+auto = input(false, "Auto", inline = 'threshold', group = fvgSettings)
+
+showLast = input.int(0, 'Unmitigated Levels', minval = 0, group = fvgSettings)
+mitigationLevels = input.bool(false, 'Mitigation Levels', group = fvgSettings)
+
+tf = input.timeframe("", "Timeframe", group = fvgSettings)
+
+//-----------------------------------------------------------------------------}
+//UDT's
+//-----------------------------------------------------------------------------{
+type fvg
+    float max
+    float min
+    bool  isbull
+    int   t = time
+
+//-----------------------------------------------------------------------------}
+//Methods/Functions
+//-----------------------------------------------------------------------------{
+n = bar_index
+
+method tosolid(color id)=> color.rgb(color.r(id),color.g(id),color.b(id))
+
+detect()=>
+    var new_fvg = fvg.new(na, na, na, na)
+    threshold = auto ? ta.cum((high - low) / low) / bar_index : thresholdPer / 100
+
+    bull_fvg = low > high[2] and close[1] > high[2] and (low - high[2]) / high[2] > threshold
+    bear_fvg = high < low[2] and close[1] < low[2] and (low[2] - high) / high > threshold
+    
+    if bull_fvg
+        new_fvg := fvg.new(low, high[2], true)
+    else if bear_fvg
+        new_fvg := fvg.new(low[2], high, false)
+
+    [bull_fvg, bear_fvg, new_fvg]
+
+//-----------------------------------------------------------------------------}
+//FVG's detection/display
+//-----------------------------------------------------------------------------{
+var float max_bull_fvg = na, var float min_bull_fvg = na, var bull_count = 0, var bull_mitigated = 0
+var float max_bear_fvg = na, var float min_bear_fvg = na, var bear_count = 0, var bear_mitigated = 0
+var t = 0
+
+var fvg_records = array.new<fvg>(0)
+var fvg_areas = array.new<box>(0)
+
+[bull_fvg, bear_fvg, new_fvg] = request.security(syminfo.tickerid, tf, detect())
+
+//Bull FVG's
+if bull_fvg and new_fvg.t != t
+    if dynamic
+        max_bull_fvg := new_fvg.max
+        min_bull_fvg := new_fvg.min
+    
+    //Populate FVG array
+    if not dynamic
+        fvg_areas.unshift(box.new(bar_index-2, new_fvg.max, n+extend, new_fvg.min, na, bgcolor = bullCss))
+    fvg_records.unshift(new_fvg)
+
+    bull_count += 1
+    t := new_fvg.t
+else if dynamic
+    max_bull_fvg := math.max(math.min(close, max_bull_fvg), min_bull_fvg)
+
+//Bear FVG's
+if bear_fvg and new_fvg.t != t
+    if dynamic
+        max_bear_fvg := new_fvg.max
+        min_bear_fvg := new_fvg.min
+    
+    //Populate FVG array
+    if not dynamic
+        fvg_areas.unshift(box.new(bar_index-2, new_fvg.max, n+extend, new_fvg.min, na, bgcolor = bearCss))
+    fvg_records.unshift(new_fvg)
+
+    bear_count += 1
+    t := new_fvg.t
+else if dynamic
+    min_bear_fvg := math.min(math.max(close, min_bear_fvg), max_bear_fvg) 
+
+//-----------------------------------------------------------------------------}
+//Unmitigated/Mitigated lines
+//-----------------------------------------------------------------------------{
+//Test for mitigation
+if fvg_records.size() > 0
+    for i = fvg_records.size()-1 to 0
+        get = fvg_records.get(i)
+
+        if get.isbull
+            if close < get.min
+                //Display line if mitigated
+                if mitigationLevels
+                    line.new(get.t
+                      , get.min
+                      , time
+                      , get.min
+                      , xloc.bar_time
+                      , color = bullCss
+                      , style = line.style_dashed)
+
+                //Delete box
+                if not dynamic
+                    area = fvg_areas.remove(i)
+                    area.delete()
+
+                fvg_records.remove(i)
+                bull_mitigated += 1
+        else if close > get.max
+            //Display line if mitigated
+            if mitigationLevels
+                line.new(get.t
+                  , get.max
+                  , time
+                  , get.max
+                  , xloc.bar_time
+                  , color = bearCss
+                  , style = line.style_dashed)
+
+            //Delete box
+            if not dynamic
+                area = fvg_areas.remove(i)
+                area.delete()
+            
+            fvg_records.remove(i)
+            bear_mitigated += 1
+
+//Unmitigated lines
+var unmitigated = array.new<line>(0)
+
+//Remove umitigated lines 
+if barstate.islast and showLast > 0 and fvg_records.size() > 0
+    if unmitigated.size() > 0 
+        for element in unmitigated
+            element.delete()
+        unmitigated.clear()
+
+    for i = 0 to math.min(showLast-1, fvg_records.size()-1)
+        get = fvg_records.get(i)
+
+        unmitigated.push(line.new(get.t
+          , get.isbull ? get.min : get.max 
+          , time
+          , get.isbull ? get.min : get.max
+          , xloc.bar_time
+          , color = get.isbull ? bullCss : bearCss))
+
+
+
+//-----------------------------------------------------------------------------}
+//Alerts
+//-----------------------------------------------------------------------------{
+alertcondition(bull_count > bull_count[1], 'Bullish FVG', 'Bullish FVG detected')
+alertcondition(bear_count > bear_count[1], 'Bearish FVG', 'Bearish FVG detected')
+
+alertcondition(bull_mitigated > bull_mitigated[1], 'Bullish FVG Mitigation', 'Bullish FVG mitigated')
+alertcondition(bear_mitigated > bear_mitigated[1], 'Bearish FVG Mitigation', 'Bearish FVG mitigated')
+
+//-----------------------------------------------------------------------------}
+
+plotOB = input.bool(defval=true, title='Plot OB', group='Order Blocks')
+obBullColor = input.color(defval=color.new(color.green, 50), title='Bullish OB Color', inline='Set Custom Color', group='Order Blocks')
+obBearColor = input.color(defval=color.new(color.red, 50), title='Bearish OB Color', inline='Set Custom Color', group='Order Blocks')
+obBoxBorder = input.string(defval=line.style_solid, title='OB Box Border Style', options=[line.style_dashed, line.style_dotted, line.style_solid], group='Order Blocks', tooltip='To disable border, set Border Width below to 0')
+obBorderTransparency = input.int(defval=10, title='OB Border Box Transparency', minval=0, maxval=100, group='Order Blocks')
+obMaxBoxSet = input.int(defval=100, title='Maximum OB Box Displayed', minval=1, maxval=100, group='Order Blocks', tooltip='Minimum = 1, Maximum = 100')
+filterMitOB = input.bool(defval=true, title='Custom Color Mitigated OB', group='Order Blocks')
+mitOBColor = input.color(defval=color.new(color.gray, 75), title='Mitigated OB Color', group='Order Blocks', inline='Set Custom Color Mit OB', tooltip='Set Transparency to 0 to make mitigated OB disappear')
+
+
+plotLabelOB = input.bool(defval=true, title='Plot OB Label', inline='OB label', group='Label Options')
+obLabelColor = input.color(defval=color.gray, title='Color', inline='OB label', group='Label Options')
+obLabelSize = input.string(defval=size.tiny, title="Size", options=[size.huge, size.large, size.small, size.tiny, size.auto, size.normal], inline='OB label', group='Label Options')
+
+//Box Types
+var int _ob  = 1
+
+//Box Labels
+var string _obLabel  = "OB"
+var string _plus     = "+"
+var string _minus    = "-"
+var string _empty    = ""
+
+//Box Arrays
+var box[] _bearBoxesOB  = array.new_box()
+var box[] _bullBoxesOB  = array.new_box()
+
+
+//Functions
+isUp(index) =>
+    close[index] > open[index]
+
+isDown(index) =>
+    close[index] < open[index]
+
+isObUp(index) =>
+    isDown(index + 1) and isUp(index) and close[index] > high[index + 1]
+
+isObDown(index) =>
+    isUp(index + 1) and isDown(index) and close[index] < low[index + 1]
+
+isFvgUp(index) =>
+    (low[index] > high[index + 2])
+
+isFvgDown(index) =>
+    (high[index] < low[index + 2])
+
+//Function to Calculte Box Length
+_controlBox(_boxes, _high, _low, _type) =>
+    if array.size(_boxes) > 0
+        for i = array.size(_boxes) - 1 to 0 by 1
+            _box = array.get(_boxes, i)
+            _boxLow = box.get_bottom(_box)
+            _boxHigh = box.get_top(_box)
+            _boxRight = box.get_right(_box)
+            if (filterMitOB and _type == _ob)
+                if na or (bar_index == _boxRight and not((_high > _boxLow and _low < _boxLow) or (_high > _boxHigh and _low < _boxHigh)))
+                    box.set_right(_box, bar_index + 1)
+                else
+                    if _type == _ob
+                        box.set_bgcolor(_box, mitOBColor)
+                        box.set_border_color(_box, mitOBColor)
+            else
+                if na or (bar_index == _boxRight and not((_high > _boxLow and _low < _boxLow) or (_high > _boxHigh and _low < _boxHigh)))
+                    box.set_right(_box, bar_index + 1)
+
+//////////////////// Order Block //////////////////
+//Bullish OB Box Plotting
+if isObUp(1) and plotOB
+    _bullboxOB = box.new(left=bar_index - 2, top=high[2], right=bar_index, bottom=low[2], border_color=color.new(obBullColor, obBorderTransparency), border_style=obBoxBorder, border_width=0, bgcolor=obBullColor, 
+     text=plotLabelOB ? _obLabel  + _plus : _empty, text_halign=text.align_right, text_valign=text.align_bottom, text_size=size.auto, text_color=obLabelColor)
+    if array.size(_bullBoxesOB) > obMaxBoxSet
+        box.delete(array.shift(_bullBoxesOB))
+    array.push(_bullBoxesOB, _bullboxOB)
+
+//Bearish OB Box Plotting
+if isObDown(1) and plotOB
+    _bearboxOB = box.new(left=bar_index - 2, top=high[2], right=bar_index, bottom=low[2], border_color=color.new(obBearColor, obBorderTransparency), border_style=obBoxBorder, border_width=0, bgcolor=obBearColor, 
+     text=plotLabelOB ? _obLabel  + _minus : _empty, text_halign=text.align_right, text_valign=text.align_bottom, text_size= size.auto, text_color=obLabelColor)
+    if array.size(_bearBoxesOB) > obMaxBoxSet
+        box.delete(array.shift(_bearBoxesOB))
+    array.push(_bearBoxesOB, _bearboxOB)
+    
+if plotOB
+    _controlBox(_bearBoxesOB, high, low, _ob)
+    _controlBox(_bullBoxesOB, high, low, _ob)
